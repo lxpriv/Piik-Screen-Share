@@ -1,0 +1,89 @@
+diff --git a/docs/standards/rooms-access.md b/docs/standards/rooms-access.md
+index 6b48cd9..b033099 100644
+--- a/docs/standards/rooms-access.md
++++ b/docs/standards/rooms-access.md
+@@ -91,6 +91,10 @@ Three independent authorities exist:
+    Viewer grant. It authorizes only the Viewer role for that exact room
+    incarnation and bypasses site access and code-entry policy.
+ 
++The Browser ignores a trailing `bdx_monitor_append_params` mobile-jump telemetry
++field before validating the invitation grant; other malformed or ambiguous
++credential content remains invalid.
++
+ The invitation grant is carried in the URL fragment, removed from the address
+ bar on first read, and retained only in room-scoped `sessionStorage`. Refreshing
+ the same tab preserves it. It is not intentionally persisted across independent
+diff --git a/src/client/lib/session.ts b/src/client/lib/session.ts
+index 4182261..36dac1a 100644
+--- a/src/client/lib/session.ts
++++ b/src/client/lib/session.ts
+@@ -509,7 +509,8 @@ export function readViewerRoute(): ViewerRoute | null {
+   // grant, or it would revoke the grant this tab already holds.
+   const fragmentMatch = window.location.hash.match(/^#v=(.*)$/);
+   if (fragmentMatch) {
+-    const viewerGrant = fragmentMatch[1];
++    // Mobile app jumps can append telemetry inside the fragment, after the credential.
++    const viewerGrant = fragmentMatch[1].replace(/&bdx_monitor_append_params=[^&]*$/, "");
+     const validGrant = isValidViewerGrant(viewerGrant) ? viewerGrant : null;
+     if (validGrant) {
+       writeSessionValue(viewerGrantStorageKey(roomId), validGrant);
+diff --git a/tests/client-state.test.ts b/tests/client-state.test.ts
+index 1e6d3b1..7a33d5d 100644
+--- a/tests/client-state.test.ts
++++ b/tests/client-state.test.ts
+@@ -535,6 +535,44 @@ describe("client session identity", () => {
+     expect(readViewerGrant("8")).toBeNull();
+   });
+ 
++  it("accepts an invitation with an appended mobile jump monitor parameter", () => {
++    const values = new Map<string, string>();
++    const grant = `${"c".repeat(21)}g`;
++    const replaceState = vi.fn();
++    vi.stubGlobal("window", {
++      location: new URL(`https://share.test/r/1234?from_im=true#v=${grant}&bdx_monitor_append_params=%7B%22enter_from%22%3A%22im_safe_jump_to_web%22%7D`),
++      history: { state: null, replaceState },
++      sessionStorage: {
++        getItem: (key: string) => values.get(key) ?? null,
++        setItem: (key: string, value: string) => values.set(key, value),
++        removeItem: (key: string) => values.delete(key),
++      },
++    });
++    expect(readViewerRoute()).toEqual({ roomId: "1234", viewerGrant: grant });
++    expect(readViewerGrant("1234")).toBe(grant);
++    expect(replaceState).toHaveBeenCalledWith(null, "", "/r/1234");
++  });
++
++  it.each([
++    "malformed&bdx_monitor_append_params=%7B%7D",
++    `${"c".repeat(21)}g&v=${"d".repeat(21)}w&bdx_monitor_append_params=%7B%7D`,
++    `${"c".repeat(21)}g&unrecognized=1&bdx_monitor_append_params=%7B%7D`,
++    `${"c".repeat(21)}g&bdx_monitor_append_params=%7B%7D&unrecognized=1`,
++  ])("keeps malformed or ambiguous tracked invitations denied: %s", (fragment) => {
++    const values = new Map<string, string>([["piik:viewer-grant:1234", `${"d".repeat(21)}w`]]);
++    vi.stubGlobal("window", {
++      location: new URL(`https://share.test/r/1234#v=${fragment}`),
++      history: { state: null, replaceState: vi.fn() },
++      sessionStorage: {
++        getItem: (key: string) => values.get(key) ?? null,
++        setItem: (key: string, value: string) => values.set(key, value),
++        removeItem: (key: string) => values.delete(key),
++      },
++    });
++    expect(readViewerRoute()).toEqual({ roomId: "1234", invalidGrant: true });
++    expect(readViewerGrant("1234")).toBeNull();
++  });
++
+   it("fails malformed Viewer fragments closed without leaking across rooms", () => {
+     const values = new Map<string, string>();
+     const oldGrant = `${"d".repeat(21)}w`;
+@@ -599,8 +637,8 @@ describe("client session identity", () => {
+     const stop = watchViewerInvites(changed);
+     const first = `${"g".repeat(21)}g`;
+     const renewed = `${"h".repeat(21)}w`;
+-    for (const grant of [first, renewed]) {
+-      location.hash = `v=${grant}`;
++    for (const [grant, suffix] of [[first, ""], [renewed, "&bdx_monitor_append_params=%7B%7D"]]) {
++      location.hash = `v=${grant}${suffix}`;
+       events.dispatchEvent(new Event("hashchange"));
+       expect(changed).toHaveBeenLastCalledWith({ roomId: "1234", viewerGrant: grant });
+       expect(readViewerGrant("1234")).toBe(grant);

@@ -1,0 +1,44 @@
+# Local credentials and user state
+**/config.local.json
+**/.env
+**/.env.local
+/piik/data/
+/piik/logs/
+/kook-bot/data/
+
+# Upstream checkout and local patch worktree (kept locally)
+/piik/source/
+/piik/build/
+/piik/build-cache/
+/piik/build-tools/
+
+# Downloaded runtimes, private bundles, backups and generated executables
+/piik/runtime/
+/piik/releases/
+/piik/server/backups/
+*.exe
+*.zip
+*.sqlite*
+*.pid
+*.log
+**/node_modules/
+.tools/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.vs/
+.vscode/
+
+# Local application state and upstream checkouts
+/piik/data/
+/piik/logs/
+/piik/source/
+/piik/build/
+/piik/build-cache/
+/piik/build-tools/
+/piik/releases/
+/piik/runtime/
+**/config.local.json
+**/.env
+**/.env.local
