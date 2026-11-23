@@ -16,7 +16,12 @@ if (Test-Path -LiteralPath $pidFile) {
     Remove-Item -LiteralPath $pidFile
 }
 if ($Expire) {
-    & $piikNodeCommand "$PSScriptRoot\bot.mjs" --expire
-    if ($LASTEXITCODE -ne 0) { throw 'Could not mark the KOOK invitation ended. Retry Stop after restoring connectivity.' }
+    try {
+        & $piikNodeCommand "$PSScriptRoot\bot.mjs" --expire
+        if ($LASTEXITCODE -ne 0) { throw 'Could not mark the KOOK invitation ended.' }
+    } catch {
+        # The watcher is stopped. Keep the unexpired state for the next launch, without trapping the local UI.
+        Write-Warning "KOOK_END_PENDING: $($_.Exception.Message) The local watcher is stopped; the message update will be retried next launch."
+    }
 }
 Write-Host 'KOOK invitation watcher stopped.'

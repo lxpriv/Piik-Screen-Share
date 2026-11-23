@@ -23,10 +23,9 @@ try {
         try { & "$testRoot\piik\Stop-Piik.ps1" | Out-Null } catch { $failure = $_.Exception.Message }
         if ($global:shutdownTestNodeCalls -ne 2) { throw 'Shutdown skipped capture or notification cleanup.' }
         if (@(Get-ChildItem -LiteralPath $testRoot -Filter '*.pid' -Recurse).Count) { throw 'Shutdown left stale PID files.' }
-        if (($global:shutdownTestCaptureExit -or $global:shutdownTestNotificationExit) -and -not $failure) { throw 'Failed cleanup was reported as success.' }
-        if (-not ($global:shutdownTestCaptureExit -or $global:shutdownTestNotificationExit) -and $failure) { throw $failure }
+        if ($global:shutdownTestCaptureExit -and -not $failure) { throw 'Failed capture cleanup was reported as success.' }
+        if (-not $global:shutdownTestCaptureExit -and $failure) { throw $failure }
         if ($global:shutdownTestCaptureExit -and $failure -notlike '*capture page*') { throw 'Capture failure was hidden.' }
-        if ($global:shutdownTestNotificationExit -and $failure -notlike '*KOOK invitation*') { throw 'KOOK failure was hidden.' }
     }
     Write-Output 'PASS: shutdown completes remaining cleanup on capture/KOOK failures; stale/reused PIDs are safe.'
 } finally {

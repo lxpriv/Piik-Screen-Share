@@ -1,4 +1,15 @@
 // Piik v2.8: use its existing preview/invitation UI; never read Host tokens.
+import {readFileSync} from 'node:fs';
+
+export function localPort() {
+  let config;
+  try { config = readFileSync(new URL('../piik/server/.env', import.meta.url), 'utf8'); }
+  catch (error) { if (error.code === 'ENOENT') return 8787; throw error; }
+  const port = Number(config.match(/^PORT=(\d+)[ \t]*\r?$/m)?.[1]);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT in piik/server/.env');
+  return port;
+}
+
 export async function evaluate(page, expression) {
   const socket = new WebSocket(page.webSocketDebuggerUrl);
   try {
@@ -23,7 +34,8 @@ export async function evaluate(page, expression) {
 
 async function hostPages(publicOrigin) {
   const pages = await (await fetch('http://127.0.0.1:9227/json/list', {signal: AbortSignal.timeout(3000)})).json();
-  const origins = new Set(['http://localhost:8787', 'http://127.0.0.1:8787']);
+  const port = localPort();
+  const origins = new Set([`http://localhost:${port}`, `http://127.0.0.1:${port}`]);
   if (publicOrigin) origins.add(new URL(publicOrigin).origin);
   return pages.filter(page => {
     if (page.type !== 'page') return false;
@@ -51,15 +63,24 @@ export async function ensureInvitation(state) {
 }
 
 export async function stopHostPages(publicOrigin) {
-  let pages;
-  try { pages = await hostPages(publicOrigin); }
-  catch (error) {
-    if (error.cause?.code === 'ECONNREFUSED') return {closed: 0};
-    throw error;
-  }
+  const remainingPages = async () => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { return await hostPages(publicOrigin); }
+      catch (error) {
+        if (error.cause?.code === 'ECONNREFUSED') return [];
+        // Closing the browser can reset an in-flight request. Confirm its final state.
+        if (attempt) throw error;
+      }
+    }
+  };
+  const pages = await remainingPages();
   for (const page of pages) {
-    const response = await fetch(`http://127.0.0.1:9227/json/close/${encodeURIComponent(page.id)}`, {signal: AbortSignal.timeout(3000)});
-    if (!response.ok) throw new Error('Could not close a Piik Host capture page.');
+    try {
+      const response = await fetch(`http://127.0.0.1:9227/json/close/${encodeURIComponent(page.id)}`, {signal: AbortSignal.timeout(3000)});
+      if (!response.ok) throw new Error('Could not close a Piik Host capture page.');
+    } catch (error) {
+      if ((await remainingPages()).some(open => open.id === page.id)) throw error;
+    }
   }
   return {closed: pages.length};
 }

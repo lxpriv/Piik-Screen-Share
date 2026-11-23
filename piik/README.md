@@ -6,12 +6,14 @@
 
 - **开始**：启动 Piik、临时公网隧道和 KOOK 监视器，打开独立 Chrome / Edge。选好画面且公网检查通过后，机器人自动发送当前邀请。
 - **停止**：关闭专用浏览器中的房主采集页，移除 KOOK 消息中的链接，关闭后台服务。观众页和其他网页保留。
-- **关闭窗口**：等待当前操作并完成停止；清理失败时保留窗口供重试。最小化保持共享。
+- **关闭窗口**：等待当前操作并完成停止；本地清理失败时保留窗口供重试。浏览器已提前关闭也可正常停止。最小化保持共享。
 - **KOOK 用户 ID**：可选；填写后消息显示该用户当前服务器昵称，留空不署名。偏好只保存在本机 `data/kook-user-id.txt`。
 
 新建专用浏览器资料默认私密、无密码。完整观众邀请可免密码加入；仅凭房间号不能加入。选屏弹窗默认勾选浏览器支持的声音选项，仍需用户确认，不会自动开启麦克风。
 
 状态每 2 秒从本地进程和监视器记录更新，不代表所有异地观众都已连接。当前集成使用 WebRTC 直连，不提供 TURN / SFU 媒体中转。
+
+如果停止时 KOOK 更新失败，本地共享仍会关闭，窗口显示“频道消息更新待重试”，可以正常退出。失败详情写入日志，原消息记录保留，下次启动的监视器会重试移除旧链接。升级便携版时覆盖原解压目录即可，保留 `piik/data` 和 `kook-bot/data`，以便继续处理上次的消息。
 
 ## 编译与便携包
 
@@ -42,6 +44,8 @@ powershell -ExecutionPolicy Bypass -File launcher/Build-Portable.ps1 -NodeExecut
 
 临时域名重建后可能变化。监视器读取实际房主页的完整邀请，不使用历史地址。
 
+本机 HTTP 端口由 `server/.env` 的 `PORT` 统一控制，新便携包默认使用 `17887`。若 Windows 保留或其他程序占用该端口，停止应用后将 `PORT` 改为一个可用端口；浏览器入口、隧道和机器人会同步使用。启动前会检查端口，服务提前退出时会直接显示服务日志中的原因。
+
 ## 验收
 
 隔离检查，不访问 KOOK：
@@ -49,6 +53,7 @@ powershell -ExecutionPolicy Bypass -File launcher/Build-Portable.ps1 -NodeExecut
 ```powershell
 powershell -ExecutionPolicy Bypass -File launcher/Test-LauncherFailures.ps1
 powershell -ExecutionPolicy Bypass -File launcher/Test-Shutdown.ps1
+powershell -ExecutionPolicy Bypass -File launcher/Test-ClosedBrowser.ps1
 ```
 
 完整本机联动检查需先结束已有共享：

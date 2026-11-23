@@ -1,6 +1,10 @@
-﻿param([switch]$CloseDuringStart, [switch]$InterruptTunnel, [switch]$LivePreview, [switch]$CloseWhileRunning, [switch]$CloseDuringStop, [string]$OwnerUserId, [switch]$Anonymous)
+﻿param([switch]$CloseDuringStart, [switch]$InterruptTunnel, [switch]$LivePreview, [switch]$CloseWhileRunning, [switch]$CloseDuringStop, [string]$OwnerUserId, [switch]$Anonymous, [switch]$CloseBrowserFirst)
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+. "$PSScriptRoot\Runtime.ps1"
+$localPort = Get-PiikLocalPort
+$localOrigin = "http://localhost:$localPort"
+$localOrigins = @($localOrigin, "http://127.0.0.1:$localPort")
 $exe = Join-Path $workspace 'piik\Piik-Screen-Share.exe'
 if (-not (Test-Path -LiteralPath $exe)) { throw 'Launcher EXE does not exist yet.' }
 Add-Type @'
@@ -89,11 +93,15 @@ try {
         $duplicate = Start-Process -FilePath $exe -PassThru
         if (-not $duplicate.WaitForExit(5000)) { throw 'Opening again should focus the existing window without a blocking prompt.' }
         if ($LivePreview) {
-            & node.exe (Join-Path $PSScriptRoot 'fixtures\cdp.mjs') 'http://localhost:8787' (Join-Path $PSScriptRoot 'fixtures\start-test-preview.js') | Out-Null
+            & node.exe (Join-Path $PSScriptRoot 'fixtures\cdp.mjs') $localOrigin (Join-Path $PSScriptRoot 'fixtures\start-test-preview.js') | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'Could not prepare synthetic preview.' }
-            & node.exe (Join-Path $PSScriptRoot 'fixtures\cdp.mjs') 'http://localhost:8787' (Join-Path $PSScriptRoot 'fixtures\choose-test-preview.js') | Out-Null
+            & node.exe (Join-Path $PSScriptRoot 'fixtures\cdp.mjs') $localOrigin (Join-Path $PSScriptRoot 'fixtures\choose-test-preview.js') | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'Could not start synthetic preview.' }
             Wait-Until { [LauncherTestWindows]::FindButton($window, '● 正在共享 · KOOK 邀请已发送') -ne [IntPtr]::Zero } 60 'Launcher did not confirm live preview and KOOK publication.'
+        }
+        if ($CloseBrowserFirst) {
+            & node.exe (Join-Path $PSScriptRoot 'fixtures\close-test-browser.mjs')
+            if ($LASTEXITCODE -ne 0) { throw 'Could not close the test browser first.' }
         }
         if ($InterruptTunnel) {
             $tunnelId = [int](Get-Content -LiteralPath (Join-Path $workspace 'piik\data\tunnel.pid'))
@@ -126,7 +134,7 @@ try {
     if (Test-Path -LiteralPath (Join-Path $workspace 'kook-bot\data\watch.pid')) { throw 'Closing left the bot watcher running.' }
     try {
         $targets = Invoke-RestMethod http://127.0.0.1:9227/json/list -TimeoutSec 3
-        $hosts = @($targets | Where-Object { $_.type -eq 'page' -and $_.url -match '^http://(?:localhost|127\.0\.0\.1):8787/(?:\?.*)?$' })
+        $hosts = @($targets | Where-Object { $url = [Uri]$_.url; $_.type -eq 'page' -and $localOrigins -contains $url.GetLeftPart([UriPartial]::Authority) -and $url.AbsolutePath -eq '/' })
         if ($hosts.Count) { throw 'Closing left a Piik Host page able to keep capturing.' }
     } catch {
         if ($_.Exception.Message -like '*Host page*') { throw }

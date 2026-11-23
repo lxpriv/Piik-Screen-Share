@@ -1,4 +1,4 @@
-﻿param([switch]$Anonymous)
+﻿param([switch]$Anonymous, [switch]$CloseBrowserFirst)
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $releaseRoot = Join-Path $workspace 'piik\releases'
@@ -21,7 +21,7 @@ try {
     # Same binaries and scripts, isolated ports/mutex so the owner's active share keeps running.
     $textFiles = @(Get-ChildItem -LiteralPath $testRoot -File -Recurse | Where-Object { $_.Extension -in '.ps1','.mjs' -or $_.Name -eq '.env' })
     foreach ($file in $textFiles) {
-        $text = (Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8).Replace('8787','18787').Replace('9227','19227')
+        $text = (Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8).Replace('8787','18787').Replace('17887','18787').Replace('9227','19227')
         if ($file.Name -eq '.env') { $text = $text.Replace('STUN_LISTEN_HOST=127.0.0.1','STUN_LISTEN_HOST=127.0.0.3') }
         if ($file.Name -eq 'Runtime.ps1') { $text = $text.Replace('Google\Chrome\Application\chrome.exe','NoChromeForTest\chrome.exe') }
         if ($file.Name -eq 'Start-Piik.ps1') { $text = $text.Replace("'--no-first-run'", "'--headless=new','--no-first-run'") }
@@ -34,7 +34,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Portable test launcher compilation failed.' }
     $integration = (Get-Content -LiteralPath "$PSScriptRoot\Test-Launcher.ps1" -Raw).Replace('8787','18787').Replace('9227','19227').Replace('& node.exe', '& "$workspace\piik\runtime\node\node.exe"')
     [IO.File]::WriteAllText("$testRoot\piik\launcher\Test-Launcher.ps1", $integration, (New-Object Text.UTF8Encoding($false)))
-    foreach ($name in 'cdp.mjs','start-test-preview.js','choose-test-preview.js') {
+    foreach ($name in 'cdp.mjs','start-test-preview.js','choose-test-preview.js','close-test-browser.mjs') {
         New-Item -ItemType Directory -Path "$testRoot\piik\launcher\fixtures" -Force | Out-Null
         $text = (Get-Content -LiteralPath "$PSScriptRoot\fixtures\$name" -Raw -Encoding UTF8).Replace('8787','18787').Replace('9227','19227')
         [IO.File]::WriteAllText("$testRoot\piik\launcher\fixtures\$name", $text, (New-Object Text.UTF8Encoding($false)))
@@ -47,7 +47,7 @@ try {
         # No global Node/Git/development tool is on PATH. Package scripts must find their own runtime.
         $env:Path = "$env:WINDIR\System32;$env:WINDIR;$env:WINDIR\System32\WindowsPowerShell\v1.0"
         $testOwner = if ($Anonymous) { '' } else { (Get-Content -LiteralPath "$workspace\piik\data\kook-user-id.txt" -Raw).Trim() }
-        & "$testRoot\piik\launcher\Test-Launcher.ps1" -LivePreview -CloseWhileRunning -OwnerUserId $testOwner -Anonymous:$Anonymous
+        & "$testRoot\piik\launcher\Test-Launcher.ps1" -LivePreview -CloseWhileRunning -OwnerUserId $testOwner -Anonymous:$Anonymous -CloseBrowserFirst:$CloseBrowserFirst
     } finally { $env:Path = $originalPath }
     $profilePath = Join-Path $testRoot 'piik\data\rooms.sqlite'
     if (-not (Test-Path -LiteralPath $profilePath)) { throw 'Fresh installation did not create its own database.' }
@@ -67,6 +67,10 @@ print('PASS: fresh portable rooms are private and password-free.')
     Write-Output 'PASS: private archive, moved Unicode/space directory, bundled Node without global PATH, Edge, automatic KOOK publish/expiry and close cleanup.'
 } catch {
     if (Test-Path -LiteralPath "$testRoot\piik\logs\launcher.log") { Get-Content -LiteralPath "$testRoot\piik\logs\launcher.log" -Tail 35 }
+    Get-Content -LiteralPath "$testRoot\piik\server\.env" -ErrorAction SilentlyContinue | Where-Object { $_ -match '^PORT=' }
+    foreach ($diagnostic in 'activity.txt','watch.err.log','watch.out.log') {
+        if (Test-Path -LiteralPath "$testRoot\kook-bot\data\$diagnostic") { Get-Content -LiteralPath "$testRoot\kook-bot\data\$diagnostic" -Tail 5 }
+    }
     throw
 } finally {
     $testProfile = Join-Path $testRoot 'piik\data\browser-profile'

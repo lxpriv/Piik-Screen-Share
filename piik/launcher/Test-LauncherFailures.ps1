@@ -3,11 +3,12 @@ $workspace = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $testRoot = Join-Path $workspace ('piik\data\launcher-failure-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path "$testRoot\piik\data" -Force | Out-Null
 '12345678' | Set-Content -LiteralPath "$testRoot\piik\data\kook-user-id.txt" -Encoding ascii
-$source = (Get-Content -LiteralPath "$PSScriptRoot\Launcher.cs" -Raw).Replace($workspace, $testRoot)
+$source = (Get-Content -LiteralPath "$PSScriptRoot\Launcher.cs" -Raw).Replace($workspace, $testRoot).Replace('Local\PiikScreenShareLauncher', ('Local\PiikFailureTest' + [guid]::NewGuid().ToString('N')))
 [IO.File]::WriteAllText("$testRoot\Launcher.cs", $source, (New-Object Text.UTF8Encoding($false)))
 "throw 'Simulated startup failure.'" | Set-Content -LiteralPath "$testRoot\piik\Start-Piik.ps1" -Encoding ascii
 @'
 if (Test-Path -LiteralPath "$PSScriptRoot\fail-stop") { throw 'Simulated cleanup failure.' }
+if (Test-Path -LiteralPath "$PSScriptRoot\notification-pending") { Write-Warning 'KOOK_END_PENDING: Simulated notification failure.' }
 Remove-Item -LiteralPath "$PSScriptRoot\data\server.pid" -ErrorAction SilentlyContinue
 Write-Output 'Cleaned up.'
 '@ | Set-Content -LiteralPath "$testRoot\piik\Stop-Piik.ps1" -Encoding ascii
@@ -47,15 +48,22 @@ function Dismiss($title) {
 }
 $app = $null
 try {
-    foreach ($scenario in 'startup-cleaned','startup-dirty','close-dirty') {
+    foreach ($scenario in 'startup-cleaned','startup-dirty','close-dirty','close-notification-pending') {
         Remove-Item -LiteralPath "$testRoot\piik\fail-stop" -ErrorAction SilentlyContinue
-        if ($scenario -ne 'startup-cleaned') { 'fail' | Set-Content -LiteralPath "$testRoot\piik\fail-stop" }
-        if ($scenario -eq 'close-dirty') { 'stale-pid' | Set-Content -LiteralPath "$testRoot\piik\data\server.pid" }
+        Remove-Item -LiteralPath "$testRoot\piik\notification-pending" -ErrorAction SilentlyContinue
+        if ($scenario -in 'startup-dirty','close-dirty') { 'fail' | Set-Content -LiteralPath "$testRoot\piik\fail-stop" }
+        if ($scenario -like 'close-*') { 'stale-pid' | Set-Content -LiteralPath "$testRoot\piik\data\server.pid" }
+        if ($scenario -eq 'close-notification-pending') { 'pending' | Set-Content -LiteralPath "$testRoot\piik\notification-pending" }
         $app = Start-Process -FilePath "$testRoot\LauncherFailure.exe" -PassThru
         Wait-For { $app.Refresh(); $app.MainWindowHandle -ne [IntPtr]::Zero } 'Failure-check window did not open.'
         $window = $app.MainWindowHandle
         $start = [FailureCheckWindows]::Button($window, '开始')
         $stop = [FailureCheckWindows]::Button($window, '停止')
+        if ($scenario -eq 'close-notification-pending') {
+            [FailureCheckWindows]::PostMessage($window, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+            if (-not $app.WaitForExit(10000)) { throw 'Notification failure must not prevent a locally cleaned launcher from exiting.' }
+            continue
+        }
         if ($scenario -eq 'close-dirty') {
             [FailureCheckWindows]::PostMessage($window, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
             Dismiss '尚未完成停止'

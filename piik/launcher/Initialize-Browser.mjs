@@ -1,14 +1,19 @@
 import {setTimeout as delay} from 'node:timers/promises';
 import {existsSync, mkdirSync, writeFileSync} from 'node:fs';
-import {evaluate} from '../../kook-bot/browser.mjs';
+import {evaluate, localPort} from '../../kook-bot/browser.mjs';
 
 // Configure a fresh installation through Piik's own UI, without copying a Host identity.
 const deadline = Date.now() + 20000;
 const marker = new URL('../data/private-default.ready', import.meta.url);
+const origins = new Set([`http://localhost:${localPort()}`, `http://127.0.0.1:${localPort()}`]);
 while (true) {
   try {
     const pages = await (await fetch('http://127.0.0.1:9227/json/list', {signal: AbortSignal.timeout(2000)})).json();
-    const page = pages.find(page => page.type === 'page' && /^http:\/\/(?:localhost|127\.0\.0\.1):8787\/(?:\?.*)?$/.test(page.url));
+    const page = pages.find(page => {
+      if (page.type !== 'page') return false;
+      try { const url = new URL(page.url); return origins.has(url.origin) && url.pathname === '/'; }
+      catch { return false; }
+    });
     if (page && await evaluate(page, `(() => {
       const key = 'piik:host-creation-profile:v1';
       const saved = JSON.parse(localStorage.getItem(key) || 'null');

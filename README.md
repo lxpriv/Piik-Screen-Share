@@ -6,6 +6,8 @@ Windows 屏幕共享启动器，基于 [Piik](https://github.com/TNTcraftHIM/Pii
 - 自动启动本地 Piik、Cloudflare 临时隧道和专用 Chrome / Edge。
 - 检测到共享预览和公网服务就绪后，向指定 KOOK 文字频道发送完整邀请；结束后移除消息中的链接。
 - 支持可选分享者昵称、自定义消息和私下分发的便携包。
+- 本机端口统一读取配置，新配置默认 `17887`；启动前检测端口占用或 Windows 保留，服务异常退出时显示具体原因。
+- 提前关闭浏览器后仍可正常停止；KOOK 结束消息更新失败时保留待重试记录，本地共享可正常关闭。
 
 ## 目录
 
@@ -53,6 +55,7 @@ node kook-bot/test.mjs
 node kook-bot/test-browser.mjs
 node kook-bot/test-watch.mjs
 powershell -ExecutionPolicy Bypass -File piik/launcher/Test-Shutdown.ps1
+powershell -ExecutionPolicy Bypass -File piik/launcher/Test-ClosedBrowser.ps1
 powershell -ExecutionPolicy Bypass -File piik/launcher/Test-LauncherFailures.ps1
 ```
 

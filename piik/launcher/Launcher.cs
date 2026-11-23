@@ -59,6 +59,7 @@ internal sealed class ShareWindow : Form
     private bool closing;
     private bool allowClose;
     private bool cleanupNeeded;
+    private bool invitationPending;
     private string failure;
 
     internal ShareWindow()
@@ -189,9 +190,9 @@ internal sealed class ShareWindow : Form
             case "browser-error": runningStatus = "● 无法读取共享状态，请检查专用浏览器"; break;
             case "offline": case "error": runningStatus = "● 服务运行中，KOOK 通知异常"; break;
         }
-        bool warning = failure != null || (cleanupNeeded && (!running || !bot || activity == "no-invite" || activity == "browser-error"));
+        bool warning = failure != null || (!cleanupNeeded && invitationPending) || (cleanupNeeded && (!running || !bot || activity == "no-invite" || activity == "browser-error"));
         status.ForeColor = warning ? Color.FromArgb(180, 44, 44) : !cleanupNeeded ? Color.FromArgb(90, 98, 112) : activity == "sharing" ? Color.FromArgb(30, 126, 80) : Color.FromArgb(43, 100, 226);
-        status.Text = failure ?? (running ? runningStatus : cleanupNeeded ? "● 连接已中断，请先停止清理" : "● 未启动");
+        status.Text = failure ?? (running ? runningStatus : cleanupNeeded ? "● 连接已中断，请先停止清理" : invitationPending ? "● 已停止，频道消息更新待重试" : "● 未启动");
         if (failure == null && !cleanupNeeded && !OwnerIdValid) status.Text = "● 用户 ID 请填写纯数字，或留空";
         hint.Text = failure != null ? "可查看刚才的错误提示或 piik\\logs\\launcher.log。\n" + (cleanupNeeded ? "请先点击“停止”完成清理，再重新开始。" : "可以点击“开始”重试。")
             : running && activity == "no-invite" ? "邀请已撤销，旧链接无法加入。\n请在浏览器中生成新邀请，或停止后重新开始。"
@@ -199,6 +200,7 @@ internal sealed class ShareWindow : Form
             : running && activity == "waiting" ? "在自动打开的浏览器中选择共享画面。\n若已关闭浏览器，请先停止，再重新开始。"
             : running && bot ? "在浏览器中选择、暂停或切换共享画面。\n点击“停止”结束共享并移除频道中的邀请链接。"
             : cleanupNeeded ? "请点击“停止”完成清理后重新开始。\n清理完成前不会重复启动后台服务。"
+            : invitationPending ? "本地共享已关闭，频道消息暂未更新。\n可以正常退出；下次启动时会重试更新。"
             : !OwnerIdValid ? "KOOK 设置 → 高级设置 → 开启开发者模式。\n右键自己的头像复制 ID，或清空输入框。"
             : string.IsNullOrWhiteSpace(ownerId.Text) ? "点击“开始”打开共享页面。\n未填写 ID：频道消息不显示分享者信息。"
             : "点击“开始”打开共享页面。\n选屏时默认勾选声音，可按需取消。";
@@ -253,6 +255,7 @@ internal sealed class ShareWindow : Form
                 if (!cleanup.Success) result.Detail += "\n\n清理未完成：" + cleanup.Detail;
             }
             if (!starting) cleanupNeeded = !result.Success;
+            if (result.Success) invitationPending = !starting && result.Detail.Contains("KOOK_END_PENDING:");
             if (!result.Success) failure = starting ? (cleanupNeeded ? "● 启动失败，请先停止清理" : "● 启动失败，可以重试") : "● 停止未完成，请重试停止";
             if (!result.Success && !closing)
                 MessageBox.Show(this, result.Detail + "\n\n日志：piik\\logs\\launcher.log", "Piik 操作失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);

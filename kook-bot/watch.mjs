@@ -92,7 +92,8 @@ try {
   }
 } catch (error) {
   // ponytail: fail visibly without auto-retrying an uncertain send; inspect the channel/log before restarting.
-  console.error(error.message);
+  console.error(error.stack || error.message);
+  if (error.cause) console.error(`Cause: ${error.cause.code || error.cause.name || 'unknown'} ${error.cause.message}`);
   report('error');
   process.exitCode = 1;
 }
